@@ -10,11 +10,11 @@ import (
 )
 
 type Handler struct {
-    storage *storage.MemoryStorage
+	storage storage.Storage  // 使用接口
 }
 
-func NewHandler(storage *storage.MemoryStorage) *Handler {
-    return &Handler{storage: storage}
+func NewHandler(storage storage.Storage) *Handler {
+	return &Handler{storage: storage}
 }
 
 // CreateTaskRequest 创建任务请求
