@@ -7,4 +7,5 @@ type Storage interface {
 	GetDueTasks() ([]*task.Task, error)
 	GetPendingCount() (int64, error)
 	GetAll() []*task.Task
+	Remove(taskID string) error
 }

@@ -199,6 +199,19 @@ func (r *RedisStorage) GetAll() []*task.Task {
 	return tasks
 }
 
+// Remove 删除任务
+func (r *RedisStorage) Remove(taskID string) error {
+	ctx := context.Background()
+
+	// 使用 Pipeline 原子删除 ZSet 和 String
+	pipe := r.client.Pipeline()
+	pipe.ZRem(ctx, r.zsetKey, taskID)
+	pipe.Del(ctx, r.detailKey(taskID))
+
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
 // GetPendingCount 获取待处理任务数量
 func (r *RedisStorage) GetPendingCount() (int64, error) {
 	ctx := context.Background()
