@@ -67,12 +67,19 @@ func (m *MemoryStorage) Remove(taskID string) error {
 
 // GetAll 获取所有任务（调试用）
 func (m *MemoryStorage) GetAll() []*task.Task {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    
-    var result []*task.Task
-    for _, t := range m.tasks {
-        result = append(result, t)
-    }
-    return result
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []*task.Task
+	for _, t := range m.tasks {
+		result = append(result, t)
+	}
+	return result
+}
+
+// GetPendingCount 获取待处理任务数量
+func (m *MemoryStorage) GetPendingCount() (int64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return int64(len(m.tasks)), nil
 }
