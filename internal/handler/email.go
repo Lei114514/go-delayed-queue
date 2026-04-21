@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"go-delay-queue/pkg/task"
@@ -39,16 +40,15 @@ func (h *EmailHandler) Handle(t *task.Task) error {
 	time.Sleep(100 * time.Millisecond)
 
 	// 模拟随机失败（用于测试重试）
-	// 实际项目中删除这段代码
-	// if rand.Float64() > h.successRate {
-	//     return fmt.Errorf("email service temporarily unavailable")
-	// }
+	if rand.Float64() > h.successRate {
+		return fmt.Errorf("email service temporarily unavailable")
+	}
 
 	// 实际发送逻辑（这里只打印）
 	fmt.Printf("[EmailHandler] Sending email to: %s\n", to)
 	fmt.Printf("  Subject: %s\n", subject)
 	fmt.Printf("  Content: %s\n", content)
-	fmt.Printf("  TaskID: %s\n\n", t.TaskID)
+	fmt.Printf("  TaskID: %s (retry: %d/%d)\n\n", t.TaskID, t.RetryCount, t.MaxRetry)
 
 	return nil
 }
