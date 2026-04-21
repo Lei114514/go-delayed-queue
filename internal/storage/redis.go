@@ -199,6 +199,37 @@ func (r *RedisStorage) GetAll() []*task.Task {
 	return tasks
 }
 
+// Update 更新任务（用于重试时更新执行时间和重试次数）
+func (r *RedisStorage) Update(t *task.Task) error {
+	ctx := context.Background()
+
+	// 1. 删除旧的 ZSet 成员
+	if err := r.client.ZRem(ctx, r.zsetKey, t.TaskID).Err(); err != nil {
+		return fmt.Errorf("zrem old task failed: %w", err)
+	}
+
+	// 2. 序列化新的任务详情
+	data, err := json.Marshal(t)
+	if err != nil {
+		return fmt.Errorf("marshal task failed: %w", err)
+	}
+
+	// 3. 使用 Pipeline 原子执行 ZAdd 和 Set
+	pipe := r.client.Pipeline()
+	pipe.ZAdd(ctx, r.zsetKey, redis.Z{
+		Score:  float64(t.ExecuteAt),
+		Member: t.TaskID,
+	})
+	pipe.Set(ctx, r.detailKey(t.TaskID), data, 0)
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("pipeline exec failed: %w", err)
+	}
+
+	return nil
+}
+
 // Remove 删除任务
 func (r *RedisStorage) Remove(taskID string) error {
 	ctx := context.Background()

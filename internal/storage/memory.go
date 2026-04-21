@@ -56,13 +56,26 @@ func (m *MemoryStorage) GetDueTasks() ([]*task.Task, error) {
     return dueTasks, nil
 }
 
+// Update 更新任务
+func (m *MemoryStorage) Update(t *task.Task) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.tasks[t.TaskID]; !exists {
+		return errors.New("task not found")
+	}
+
+	m.tasks[t.TaskID] = t
+	return nil
+}
+
 // Remove 删除任务
 func (m *MemoryStorage) Remove(taskID string) error {
-    m.mu.Lock()
-    defer m.mu.Unlock()
-    
-    delete(m.tasks, taskID)
-    return nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.tasks, taskID)
+	return nil
 }
 
 // GetAll 获取所有任务（调试用）
