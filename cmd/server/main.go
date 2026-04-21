@@ -37,8 +37,8 @@ func main() {
 	registry.Register(handler.NewEmailHandler())
 	log.Printf("Registered handlers: %v\n", registry.List())
 
-	// 初始化 Worker Pool（5 个 worker）
-	pool := worker.NewPool(5, registry)
+	// 初始化 Worker Pool（5 个 worker，传入 storage 用于重试）
+	pool := worker.NewPool(5, registry, store)
 	pool.Start(ctx)
 	log.Println("Worker pool started with 5 workers")
 
