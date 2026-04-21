@@ -46,12 +46,7 @@ func (h *Handler) CreateTask(c *gin.Context) {
         return
     }
     
-    t := &task.Task{
-        TaskID:    req.TaskID,
-        TaskType:  req.TaskType,
-        ExecuteAt: req.ExecuteAt,
-        Payload:   req.Payload,
-    }
+    t := task.NewTask(req.TaskID, req.TaskType, req.ExecuteAt, req.Payload)
     
     if err := h.storage.Add(t); err != nil {
         if err == storage.ErrTaskExists {
