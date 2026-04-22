@@ -2,11 +2,14 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"go-delay-queue/internal/handler"
+	"go-delay-queue/internal/logger"
+	"go-delay-queue/internal/metrics"
 	"go-delay-queue/internal/retry"
 	"go-delay-queue/internal/storage"
 	"go-delay-queue/pkg/task"
@@ -18,17 +21,19 @@ type Pool struct {
 	taskChan      chan *task.Task
 	registry      *handler.Registry
 	storage       storage.Storage
+	collector     *metrics.Collector
 	retryStrategy retry.Strategy
 	wg            sync.WaitGroup
 }
 
 // NewPool 创建 Worker Pool
-func NewPool(workerCount int, registry *handler.Registry, storage storage.Storage) *Pool {
+func NewPool(workerCount int, registry *handler.Registry, storage storage.Storage, collector *metrics.Collector) *Pool {
 	return &Pool{
 		workerCount:   workerCount,
 		taskChan:      make(chan *task.Task, 100),
 		registry:      registry,
 		storage:       storage,
+		collector:     collector,
 		retryStrategy: retry.NewExponentialBackoff(),
 	}
 }
@@ -64,12 +69,12 @@ func (p *Pool) worker(ctx context.Context, id int) {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("[Worker %d] Stopping...\n", id)
+			logger.Info("Worker stopping", zap.Int("worker_id", id))
 			return
 
 		case t, ok := <-p.taskChan:
 			if !ok {
-				fmt.Printf("[Worker %d] Task channel closed\n", id)
+				logger.Info("Task channel closed, worker exiting", zap.Int("worker_id", id))
 				return
 			}
 
@@ -80,24 +85,32 @@ func (p *Pool) worker(ctx context.Context, id int) {
 
 // processTask 处理单个任务（支持重试）
 func (p *Pool) processTask(ctx context.Context, t *task.Task, workerID int) {
-	fmt.Printf("[Worker %d] Processing task: %s (type: %s, retry: %d/%d)\n",
-		workerID, t.TaskID, t.TaskType, t.RetryCount, t.MaxRetry)
+	log := logger.With(
+		zap.String("task_id", t.TaskID),
+		zap.String("type", t.TaskType),
+		zap.Int("worker_id", workerID),
+	)
+
+	log.Info("Processing task")
+	p.collector.RecordProcessing(1)
+	p.collector.RecordPending(-1)
 
 	// 查找处理器
 	h, ok := p.registry.Get(t.TaskType)
 	if !ok {
-		fmt.Printf("[Worker %d] No handler for task type: %s\n", workerID, t.TaskType)
+		log.Error("No handler for task type", zap.String("task_type", t.TaskType))
+		p.collector.RecordFail()
 		return
 	}
 
 	// 执行处理
 	if err := h.Handle(t); err != nil {
-		fmt.Printf("[Worker %d] Task failed: %s, error: %v\n", workerID, t.TaskID, err)
-
-		// 尝试重试
+		log.Error("Task failed", zap.Error(err))
+		p.collector.RecordFail()
 		p.handleRetry(ctx, t, workerID)
 	} else {
-		fmt.Printf("[Worker %d] Task completed: %s\n", workerID, t.TaskID)
+		log.Info("Task completed")
+		p.collector.RecordComplete()
 	}
 }
 
@@ -105,8 +118,10 @@ func (p *Pool) processTask(ctx context.Context, t *task.Task, workerID int) {
 func (p *Pool) handleRetry(ctx context.Context, t *task.Task, workerID int) {
 	// 检查是否还可以重试
 	if !t.CanRetry() {
-		fmt.Printf("[Worker %d] Task %s exceeded max retry (%d), giving up\n",
-			workerID, t.TaskID, t.MaxRetry)
+		logger.Info("Task exceeded max retry, giving up",
+			zap.String("task_id", t.TaskID),
+			zap.Int("max_retry", t.MaxRetry),
+		)
 		return
 	}
 
@@ -116,12 +131,16 @@ func (p *Pool) handleRetry(ctx context.Context, t *task.Task, workerID int) {
 
 	// 更新任务状态
 	t.MarkRetry(nextExecuteAt)
+	p.collector.RecordRetry()
 
-	fmt.Printf("[Worker %d] Retrying task %s after %v (execute_at: %d)\n",
-		workerID, t.TaskID, delay, nextExecuteAt)
+	logger.Info("Retrying task",
+		zap.String("task_id", t.TaskID),
+		zap.Duration("delay", delay),
+		zap.Int64("next_execute_at", nextExecuteAt),
+	)
 
 	// 使用 Update 更新 Redis 中的任务
 	if err := p.storage.Update(t); err != nil {
-		fmt.Printf("[Worker %d] Failed to retry task %s: %v\n", workerID, t.TaskID, err)
+		logger.Error("Failed to retry task", err, zap.String("task_id", t.TaskID))
 	}
 }
